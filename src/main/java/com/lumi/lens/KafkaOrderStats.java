@@ -1,6 +1,7 @@
 package com.lumi.lens;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
@@ -103,11 +104,11 @@ public class KafkaOrderStats {
         // 7. 将结果发送到 Kafka
         resultStream
             .map(result -> {
-                Map<String, Object> output = new HashMap<>();
+                Map<String, Object> output = new LinkedHashMap<>();
                 output.put("EndTime",  result.f0);
                 output.put("Category", result.f1);
                 output.put("Total",    result.f2);
-                
+            
                 String jsonOutput = new ObjectMapper().writeValueAsString(output); // 转换为 JSON 字符串
                 LOG.info("Sending result to Kafka: {}", jsonOutput); // 打印发送到 Kafka 的 JSON 数据
                 return jsonOutput;

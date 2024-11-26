@@ -1,0 +1,8 @@
+blob.server.port: 6124
+taskmanager.memory.process.size: 2728m
+taskmanager.memory.flink.size: 2280m
+parallelism.default: 4
+taskmanager.numberOfTaskSlots: 8
+jobmanager.rpc.address: 8eb33910e808
+jobmanager.memory.process.size: 2600m
+query.server.port: 6125

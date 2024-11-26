@@ -1,0 +1,26 @@
+version: '3.8'
+services:
+  jobmanager:
+    image: flink:latest
+    container_name: flink_jobmanager
+    networks:
+      - flink-network
+    ports:
+      - "8081:8081"
+    command: jobmanager
+    volumes:
+      - ./flink-conf.yaml:/opt/flink/conf/flink-conf.yaml
+
+  taskmanager:
+    image: flink:latest
+    container_name: flink_taskmanager
+    networks:
+      - flink-network
+    command: taskmanager
+    volumes:
+      - ./flink-conf.yaml:/opt/flink/conf/flink-conf.yaml
+
+networks:
+  flink-network:
+    driver: bridge
+
