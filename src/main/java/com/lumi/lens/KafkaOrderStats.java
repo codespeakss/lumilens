@@ -1,8 +1,12 @@
 package com.lumi.lens;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import org.apache.flink.api.common.eventtime.WatermarkStrategy;
 import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.windowing.ProcessWindowFunction;
@@ -27,6 +31,7 @@ public class KafkaOrderStats {
     public static void main(String[] args) throws Exception {
         // 1. 初始化 Flink 执行环境
         final StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        env.setParallelism(1);
 
         // 2. 配置 Kafka 消费者
         Properties kafkaProps = new Properties();
@@ -53,7 +58,7 @@ public class KafkaOrderStats {
                 .map(json -> {
                     ObjectMapper mapper = new ObjectMapper();
                     Order order = mapper.readValue(json, Order.class); // JSON 转换为 Order 对象
-                    LOG.info("Parsed Order 1059: {}", order); // 打印解析后的订单对象
+                    LOG.info("Parsed Order: {}", order); // 打印解析后的订单对象
                     return order;
                 })
                 .assignTimestampsAndWatermarks(
@@ -66,12 +71,15 @@ public class KafkaOrderStats {
 
         );
 
-        DataStream<Tuple2<String, Double>> resultStream = ordersStream
+        DataStream<Tuple3<Long, String, Double>> resultStream = ordersStream
                 .keyBy(order -> order.category)
-                .timeWindow(Time.seconds(10))
-                .process(new ProcessWindowFunction<Order, Tuple2<String, Double>, String, TimeWindow>() {
+                .timeWindow(Time.minutes(1))
+                .process(new ProcessWindowFunction<Order, Tuple3<Long, String, Double>, String, TimeWindow>() {
                     @Override
-                    public void process(String category, Context context, Iterable<Order> elements, Collector<Tuple2<String, Double>> out) {
+                    public void process(String category, Context context, Iterable<Order> elements, Collector<Tuple3<Long, String, Double>> out) {
+                        long windowStart = context.window().getStart();
+                        long windowEnd = context.window().getEnd();
+
                         double total = 0;
                         LOG.info("Window triggered for category: {} at {}", category, context.window().getEnd());
 
@@ -79,8 +87,8 @@ public class KafkaOrderStats {
                             LOG.info("Processing Order - Category: {}, Price: {}, Timestamp: {}", order.category, order.price, order.timestamp);
                             total += order.price;
                         }
-                        Tuple2<String, Double> result = new Tuple2<>(category, total);
-                        LOG.info("Window result - Category: {}, Total: {}", category, total);
+                        Tuple3<Long, String, Double> result = new Tuple3<>(windowEnd, category, total);
+                        LOG.info("Window result - Category: {}, Total: {}, windowEnd: {}", category, total, windowEnd);
                         out.collect(result);
                     }
                 });
@@ -94,12 +102,17 @@ public class KafkaOrderStats {
 
         // 7. 将结果发送到 Kafka
         resultStream
-                .map(result -> {
-                    String output = "Category: " + result.f0 + ", Total: " + result.f1;
-                    LOG.info("Sending result to Kafka: {}", output); // 打印发送到 Kafka 的数据
-                    return output;
-                })
-                .addSink(kafkaProducer); // 发送到 Kafka
+            .map(result -> {
+                Map<String, Object> output = new HashMap<>();
+                output.put("EndTime",  result.f0);
+                output.put("Category", result.f1);
+                output.put("Total",    result.f2);
+                
+                String jsonOutput = new ObjectMapper().writeValueAsString(output); // 转换为 JSON 字符串
+                LOG.info("Sending result to Kafka: {}", jsonOutput); // 打印发送到 Kafka 的 JSON 数据
+                return jsonOutput;
+            })
+            .addSink(kafkaProducer); // 发送到 Kafka
 
         // 8. 启动作业
         env.execute("Kafka Order Stats");
